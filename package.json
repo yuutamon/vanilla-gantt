@@ -1,0 +1,30 @@
+{
+  "name": "vanilla-gantt",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A vanilla (framework-free) Gantt chart library",
+  "main": "./dist/vanilla-gantt.umd.cjs",
+  "module": "./dist/vanilla-gantt.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/vanilla-gantt.js",
+      "require": "./dist/vanilla-gantt.umd.cjs"
+    },
+    "./style.css": "./dist/vanilla-gantt.css"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^6.4.1"
+  },
+  "license": "MIT"
+}
