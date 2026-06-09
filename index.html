@@ -1,53 +1,309 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>vanilla-gantt Demo</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      padding: 24px;
-      background: #fafafa;
-      color: #333;
-    }
-    @media (prefers-color-scheme: dark) {
-      body { background: #121212; color: #d4d4d4; }
-    }
-    h1 { margin-bottom: 16px; font-size: 24px; }
-    .controls { margin-bottom: 16px; display: flex; gap: 8px; }
-    .view-btn {
-      padding: 6px 16px;
-      border: 1px solid #ccc;
-      background: #fff;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 14px;
-    }
-    .view-btn.active {
-      background: #4e8af0;
-      color: #fff;
-      border-color: #4e8af0;
-    }
-    @media (prefers-color-scheme: dark) {
-      .view-btn { background: #2a2a2a; border-color: #555; color: #d4d4d4; }
-      .view-btn.active { background: #4e8af0; border-color: #4e8af0; color: #fff; }
-    }
-    #gantt {
-      width: 100%;
-      height: 400px;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vanilla-gantt · Plan vs Actual — D3 Showcase</title>
+<!-- D3 v7 from CDN. The showcase only needs scale/time/axis/zoom; the full
+     bundle is the reliable way to pull those four from a CDN in a single file.
+     (The submodule-splitting concern only mattered for the abandoned npm-library
+     scope; for a CDN showpiece, one tag is the boring, correct choice.) -->
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"
+        integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i"
+        crossorigin="anonymous"></script>
+<style>
+  :root{
+    --bg:#0a0d12; --panel:#0d1219; --text:#c9d6e5; --muted:#7c8ba0;
+    --grid:#161d27; --today:#34e0c4;
+    --bar:#2b6cff; --barprog:#8ec0ff; --crit:#ff7a45; --critprog:#ffc0a0;
+    --milestone:#ffd24a; --dep:#3aa0ff; --depcrit:#ff7a45; --divider:#1b2430;
+    --plan:#8da0b8; --planfill:rgba(141,160,184,0.16); --slip:#ff3b5c; --early:#39e0a0;
+    --mono:'SF Mono','JetBrains Mono','Menlo','Consolas',monospace;
+  }
+  html,body{margin:0;background:var(--bg);}
+  body{font-family:var(--mono);-webkit-font-smoothing:antialiased;}
+  .wrap{padding:18px 22px 26px;}
+  .title{color:var(--text);font-size:15px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;}
+  .sub{color:var(--muted);font-size:11px;letter-spacing:.05em;margin:4px 0 8px;}
+  .stat{font-size:11.5px;letter-spacing:.03em;margin:0 0 13px;color:var(--text);}
+  .stat b{color:var(--text);}
+  .stat .sep{color:var(--divider);margin:0 8px;}
+  .stat .d{color:var(--slip);font-weight:600;}
+  .stat .g{color:var(--early);font-weight:600;}
+  .stat .m{color:var(--muted);}
+  .legend{display:flex;gap:16px;margin:0 0 10px;font-size:10.5px;color:var(--muted);letter-spacing:.04em;flex-wrap:wrap;align-items:center;}
+  .legend span{display:inline-flex;align-items:center;gap:6px;}
+  .sw{width:15px;height:9px;border-radius:2px;display:inline-block;}
+  .swp{width:15px;height:8px;border:1.3px solid var(--plan);background:var(--planfill);border-radius:2px;display:inline-block;}
+  .hint{color:var(--muted);opacity:.7;margin-left:auto;font-size:10px;}
+  svg{display:block;} text{font-family:var(--mono);}
+  .lbl{fill:var(--text);font-size:10.5px;} .lbl.crit{fill:var(--crit);}
+  .ref{fill:var(--muted);font-size:8.5px;opacity:.7;}
+  .vlate{fill:var(--slip);font-size:8.5px;font-weight:600;} .vearly{fill:var(--early);font-size:8.5px;}
+  .axis path.domain{stroke:var(--divider);}
+  .axis line{stroke:var(--divider);}
+  .axis text{fill:var(--muted);font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;}
+  .zoom-capture{cursor:grab;}
+  .zoom-capture:active{cursor:grabbing;}
+  .err{color:var(--slip);font-size:13px;padding:40px 0;}
+</style>
 </head>
 <body>
-  <h1>vanilla-gantt Demo</h1>
-  <div class="controls">
-    <button class="view-btn active" data-mode="day">Day</button>
-    <button class="view-btn" data-mode="week">Week</button>
-    <button class="view-btn" data-mode="month">Month</button>
+<div class="wrap">
+  <div class="title">vanilla-gantt · plan vs actual</div>
+  <div class="sub">READ-ONLY // PLANNED (ghost) vs ACTUAL (solid) // SLIP IN RED // D3 PAN/ZOOM // Q1 2026</div>
+  <div class="stat" id="stat"></div>
+  <div class="legend">
+    <span><i class="sw" style="background:var(--bar)"></i>Actual</span>
+    <span><i class="swp"></i>Planned (baseline)</span>
+    <span><i class="sw" style="background:var(--slip)"></i>Slip / delay</span>
+    <span><i class="sw" style="background:var(--crit)"></i>Critical path</span>
+    <span><i class="sw" style="background:var(--milestone);width:9px;height:9px;transform:rotate(45deg);border-radius:1px"></i>Milestone</span>
+    <span><i class="sw" style="background:var(--today);width:2px;height:11px"></i>Today</span>
+    <span class="hint">drag = pan · wheel = zoom</span>
   </div>
-  <div id="gantt"></div>
-  <script type="module" src="/demo/main.ts"></script>
+  <div id="chart"></div>
+</div>
+<script>
+(function(){
+  if (typeof d3 === 'undefined') {
+    document.getElementById('chart').innerHTML =
+      '<div class="err">D3 の読み込みに失敗しました。CDN への接続（インターネット）が必要です。</div>';
+    return;
+  }
+
+  // ---- data: actual (s/e) + planned baseline (ps/pe); milestones use pd + s ----
+  const DATA = [
+    {id:'req', name:'Requirements & scope',      ps:'2026-01-05',pe:'2026-01-12',s:'2026-01-05',e:'2026-01-12',p:1,  d:[],            c:1},
+    {id:'res', name:'D3 spike / research',       ps:'2026-01-08',pe:'2026-01-15',s:'2026-01-08',e:'2026-01-16',p:1,  d:[]},
+    {id:'tear',name:'Competitor teardown',       ps:'2026-01-09',pe:'2026-01-15',s:'2026-01-09',e:'2026-01-15',p:1,  d:[]},
+    {id:'dm',  name:'Data model design',         ps:'2026-01-12',pe:'2026-01-19',s:'2026-01-12',e:'2026-01-20',p:1,  d:['req'],       c:1},
+    {id:'ds',  name:'Visual design system',      ps:'2026-01-14',pe:'2026-01-24',s:'2026-01-14',e:'2026-01-26',p:1,  d:['req']},
+    {id:'tok', name:'Color & type tokens',       ps:'2026-01-20',pe:'2026-01-27',s:'2026-01-20',e:'2026-01-28',p:1,  d:['ds']},
+    {id:'m1',  name:'◆ Design freeze',           pd:'2026-01-26',s:'2026-01-27',d:['ds','dm'],t:'m'},
+    {id:'ts',  name:'Time-scale engine',         ps:'2026-01-19',pe:'2026-01-28',s:'2026-01-20',e:'2026-01-30',p:1,  d:['dm'],        c:1},
+    {id:'lay', name:'Layout / row assignment',   ps:'2026-01-22',pe:'2026-02-01',s:'2026-01-22',e:'2026-02-02',p:1,  d:['dm']},
+    {id:'bar', name:'Bar renderer (SVG)',        ps:'2026-01-28',pe:'2026-02-09',s:'2026-01-30',e:'2026-02-12',p:.85,d:['ts'],        c:1},
+    {id:'grd', name:'Grid & axis header',        ps:'2026-02-02',pe:'2026-02-09',s:'2026-02-02',e:'2026-02-10',p:.8, d:['ts']},
+    {id:'shd', name:'Weekend / today shading',   ps:'2026-02-08',pe:'2026-02-12',s:'2026-02-08',e:'2026-02-13',p:.6, d:['grd']},
+    {id:'dep', name:'Dependency renderer',       ps:'2026-02-10',pe:'2026-02-20',s:'2026-02-12',e:'2026-02-22',p:.25,d:['bar','lay'], c:1},
+    {id:'mil', name:'Milestone markers',         ps:'2026-02-12',pe:'2026-02-17',s:'2026-02-12',e:'2026-02-18',p:.2, d:['bar']},
+    {id:'cp',  name:'Critical-path compute',     ps:'2026-02-16',pe:'2026-02-23',s:'2026-02-16',e:'2026-02-24',p:.1, d:['lay']},
+    {id:'zm',  name:'Zoom / pan (d3-zoom)',      ps:'2026-02-18',pe:'2026-02-28',s:'2026-02-18',e:'2026-02-28',p:0,  d:['bar','grd']},
+    {id:'kbd', name:'Keyboard nav',              ps:'2026-02-24',pe:'2026-03-02',s:'2026-02-24',e:'2026-03-02',p:0,  d:['zm']},
+    {id:'virt',name:'Row virtualization',        ps:'2026-02-22',pe:'2026-03-06',s:'2026-02-22',e:'2026-03-06',p:0,  d:['bar'],       c:1},
+    {id:'m2',  name:'◆ Feature complete',        pd:'2026-03-06',s:'2026-03-06',d:['dep','zm','virt'],t:'m'},
+    {id:'perf',name:'Perf tuning (100s tasks)',  ps:'2026-03-06',pe:'2026-03-16',s:'2026-03-06',e:'2026-03-16',p:0,  d:['virt'],      c:1},
+    {id:'tip', name:'Tooltip / hover hit-test',  ps:'2026-03-08',pe:'2026-03-14',s:'2026-03-08',e:'2026-03-14',p:0,  d:['bar']},
+    {id:'edge',name:'Empty / error states',      ps:'2026-03-10',pe:'2026-03-15',s:'2026-03-10',e:'2026-03-15',p:0,  d:['tip']},
+    {id:'pol', name:'Polish pass',               ps:'2026-03-10',pe:'2026-03-18',s:'2026-03-10',e:'2026-03-18',p:0,  d:['perf']},
+    {id:'demo',name:'Demo dataset + page',       ps:'2026-03-14',pe:'2026-03-22',s:'2026-03-14',e:'2026-03-22',p:0,  d:['perf']},
+    {id:'docs',name:'README / API docs',         ps:'2026-03-16',pe:'2026-03-24',s:'2026-03-16',e:'2026-03-24',p:0,  d:['demo']},
+    {id:'m3',  name:'◆ Showcase ready',          pd:'2026-03-26',s:'2026-03-26',d:['demo','docs','perf'],c:1,t:'m'},
+  ];
+  const TODAY = new Date('2026-02-16');
+  const DAYMS = 86400000;
+  const dayDiff = (a,b) => Math.round((a-b)/DAYMS);
+
+  // ---- normalize + validate (degenerate-case handling) ----
+  const parse = s => { const x = new Date(s); return isNaN(x) ? null : x; };
+  const tasks = [];
+  DATA.forEach(t => {
+    if (t.t === 'm') {
+      const _pd = parse(t.pd), _s = parse(t.s);
+      if (!_pd || !_s) { console.warn('skip milestone (bad date):', t.id); return; }
+      tasks.push(Object.assign({}, t, {_pd, _s}));
+    } else {
+      const _ps = parse(t.ps), _pe = parse(t.pe), _s = parse(t.s), _e = parse(t.e);
+      if (!_ps || !_pe || !_s || !_e) { console.warn('skip task (bad date):', t.id); return; }
+      if (_e < _s || _pe < _ps) { console.warn('skip task (reversed span end<start):', t.id); return; }
+      tasks.push(Object.assign({}, t, {_ps, _pe, _s, _e}));
+    }
+  });
+  tasks.forEach((t,i) => t._i = i);
+  const byId = {}; tasks.forEach(t => byId[t.id] = t);
+
+  const chartEl = document.getElementById('chart');
+  if (!tasks.length) { chartEl.innerHTML = '<div class="err">表示するタスクがありません（NO DATA）。</div>'; return; }
+
+  // ---- geometry ----
+  const labelW = 240, HEAD = 64, rowH = 30, PH = 7, AH = 11, RPAD = 10;
+  const top = i => HEAD + i * rowH;
+  const pcy = i => top(i) + 10;   // planned (ghost) track center
+  const acy = i => top(i) + 21;   // actual (solid) track center
+  const bodyH = tasks.length * rowH;
+
+  // ---- time domain (with zero-span guard) ----
+  const allDates = [];
+  tasks.forEach(t => t.t === 'm' ? allDates.push(t._pd, t._s) : allDates.push(t._ps, t._pe, t._s, t._e));
+  allDates.push(TODAY);
+  let dmin = new Date(Math.min.apply(null, allDates));
+  let dmax = new Date(Math.max.apply(null, allDates));
+  if (+dmax <= +dmin) dmax = new Date(+dmin + 7 * DAYMS);   // zero/negative span → force min span
+  dmin = new Date(+dmin - 2 * DAYMS); dmax = new Date(+dmax + 3 * DAYMS);   // breathing room
+
+  // ---- variance stats ----
+  let nLate = 0, nOn = 0, maxSlip = 0;
+  tasks.forEach(t => {
+    const v = t.t === 'm' ? dayDiff(t._s, t._pd) : dayDiff(t._e, t._pe);
+    if (v > 0) { nLate++; if (v > maxSlip) maxSlip = v; } else nOn++;
+  });
+  document.getElementById('stat').innerHTML =
+    `<b>${nOn}</b> on plan<span class="sep">|</span>` +
+    `<span class="d">${nLate} slipped</span><span class="sep">|</span>` +
+    `worst slip <span class="d">+${maxSlip}d</span><span class="sep">|</span>` +
+    `<span class="m">as of 16 Feb 2026</span>`;
+
+  // ---- responsive viewport width ----
+  function viewportW(){
+    const cw = Math.max((document.documentElement.clientWidth || 1200) - 44, 760);
+    return Math.max(cw - labelW - RPAD, 520);
+  }
+  let vpW = viewportW();
+  let svgW = labelW + vpW + RPAD;
+  const svgH = HEAD + bodyH + 10;
+
+  // ---- scales (X = time, absolute coords incl. labelW offset) ----
+  const x0 = d3.scaleTime().domain([dmin, dmax]).range([labelW, labelW + vpW]);
+  let zx = x0;                       // current (zoomed) x scale
+  const px = d => zx(d);             // date -> pixel
+
+  // ---- svg scaffold ----
+  const svg = d3.select(chartEl).append('svg').attr('width', svgW).attr('height', svgH);
+  const defs = svg.append('defs');
+  const glow = defs.append('filter').attr('id','glow').attr('x','-60%').attr('y','-60%').attr('width','220%').attr('height','220%');
+  glow.append('feGaussianBlur').attr('stdDeviation',1.5).attr('result','b');
+  const fm = glow.append('feMerge'); fm.append('feMergeNode').attr('in','b'); fm.append('feMergeNode').attr('in','SourceGraphic');
+  function arrow(id,color){ const m=defs.append('marker').attr('id',id).attr('markerWidth',6).attr('markerHeight',6).attr('refX',5).attr('refY',3).attr('orient','auto'); m.append('path').attr('d','M0,0 L5,3 L0,6 Z').attr('fill',color); }
+  arrow('arr','var(--dep)'); arrow('arrcrit','var(--depcrit)');
+  const clipRect = defs.append('clipPath').attr('id','clip').append('rect').attr('x',labelW).attr('y',HEAD).attr('width',vpW).attr('height',bodyH);
+
+  // background panel
+  const panel = svg.append('rect').attr('x',labelW).attr('y',HEAD-1).attr('width',vpW).attr('height',bodyH).attr('fill','var(--panel)');
+  // row separators (fixed) — kept in a named selection so resize can update x2
+  const sepLines = svg.append('g').selectAll('line').data(d3.range(1,tasks.length)).join('line')
+    .attr('x1',labelW).attr('x2',labelW+vpW).attr('y1',d=>top(d)).attr('y2',d=>top(d)).attr('stroke','#11161f').attr('stroke-width',1);
+
+  // axis (top) — updated on zoom
+  const axisG = svg.append('g').attr('class','axis').attr('transform',`translate(0,${HEAD-4})`);
+  const axis = d3.axisTop(x0).tickSizeOuter(0).tickPadding(6);
+
+  // clipped chart content
+  const clip = svg.append('g').attr('clip-path','url(#clip)');
+  const todayG = clip.append('g');
+  const depG   = clip.append('g');
+  const slipG  = clip.append('g');
+  const baseG  = clip.append('g');
+  const barG   = clip.append('g');
+  const progG  = clip.append('g');
+  const mileG  = clip.append('g');
+
+  // label column (fixed, NOT clipped, NOT zoomed)
+  svg.append('line').attr('x1',labelW).attr('y1',0).attr('x2',labelW).attr('y2',svgH).attr('stroke','var(--divider)').attr('stroke-width',1.5);
+  const labelG = svg.append('g');
+  labelG.selectAll('text.lbl').data(tasks).join('text')
+    .attr('class',d=>'lbl'+(d.c?' crit':'')).attr('x',14).attr('y',d=>top(d._i)+18).text(d=>d.name);
+  labelG.selectAll('text.ref').data(tasks).join('text')
+    .attr('class','ref').attr('x',labelW-12).attr('text-anchor','end').attr('y',d=>top(d._i)+18).text(d=>String(d._i+1).padStart(2,'0'));
+
+  // today line + label
+  const todayLine = todayG.append('line').attr('y1',HEAD).attr('y2',HEAD+bodyH).attr('stroke','var(--today)').attr('stroke-width',1.5).attr('stroke-dasharray','2 3');
+  const todayLbl = todayG.append('text').attr('y',HEAD+10).attr('fill','var(--today)').attr('font-size',9).attr('font-family','var(--mono)').text('TODAY');
+
+  // ---- data subsets ----
+  const rows = tasks.filter(t => t.t !== 'm');
+  const miles = tasks.filter(t => t.t === 'm');
+  const lateRows = rows.filter(t => dayDiff(t._e, t._pe) > 0);
+  const lateMiles = miles.filter(t => dayDiff(t._s, t._pd) > 0);
+  const deps = [];
+  tasks.forEach(b => (b.d || []).forEach(pidx => { const a = byId[pidx]; if (a) deps.push({a, b, crit: !!(a.c && b.c)}); }));
+
+  // dependency elbow path
+  function elbow(ax, ay, bx, by){ const mx = Math.max(bx - 7, ax + 7); return `M${ax},${ay} H${mx} V${by} H${bx}`; }
+  const dia = (cx, cy, r) => `M${cx},${cy-r} L${cx+r},${cy} L${cx},${cy+r} L${cx-r},${cy} Z`;
+  const aEnd = t => t.t === 'm' ? t._s : t._e;   // predecessor anchor date
+
+  // ---- static marks (created once; x-attrs set in redraw) ----
+  const slipShade = slipG.selectAll('rect').data(lateRows).join('rect')
+    .attr('y',d=>pcy(d._i)-PH/2).attr('height',d=>(acy(d._i)+AH/2)-(pcy(d._i)-PH/2)).attr('fill','var(--slip)').attr('opacity',0.13);
+  const depPaths = depG.selectAll('path').data(deps).join('path')
+    .attr('fill','none').attr('stroke',d=>d.crit?'var(--depcrit)':'var(--dep)')
+    .attr('stroke-width',d=>d.crit?1.4:1).attr('opacity',d=>d.crit?0.9:0.4)
+    .attr('filter',d=>d.crit?'url(#glow)':null).attr('marker-end',d=>d.crit?'url(#arrcrit)':'url(#arr)');
+  const baseRects = baseG.selectAll('rect').data(rows).join('rect')
+    .attr('y',d=>pcy(d._i)-PH/2).attr('height',PH).attr('rx',2)
+    .attr('fill','var(--planfill)').attr('stroke','var(--plan)').attr('stroke-width',1.2);
+  const barRects = barG.selectAll('rect.bar').data(rows).join('rect').attr('class','bar')
+    .attr('y',d=>acy(d._i)-AH/2).attr('height',AH).attr('rx',3)
+    .attr('fill',d=>d.c?'var(--crit)':'var(--bar)').attr('filter',d=>d.c?'url(#glow)':null);
+  const progRects = progG.selectAll('rect').data(rows.filter(d=>d.p>0)).join('rect')
+    .attr('y',d=>acy(d._i)-AH/2).attr('height',AH).attr('rx',3)
+    .attr('fill',d=>d.c?'var(--critprog)':'var(--barprog)').attr('opacity',0.85);
+  const slipBars = barG.selectAll('rect.slip').data(lateRows).join('rect').attr('class','slip')
+    .attr('y',d=>acy(d._i)-AH/2).attr('height',AH).attr('rx',3).attr('fill','var(--slip)').attr('filter','url(#glow)');
+  const delayLbls = mileG.selectAll('text.late-task').data(lateRows).join('text').attr('class','vlate late-task')
+    .attr('y',d=>acy(d._i)+3).text(d=>'+'+dayDiff(d._e,d._pe)+'d');
+  const milePlanned = mileG.selectAll('path.mp').data(lateMiles).join('path').attr('class','mp')
+    .attr('fill','var(--planfill)').attr('stroke','var(--plan)').attr('stroke-width',1.2);
+  const mileConn = mileG.selectAll('rect.mc').data(lateMiles).join('rect').attr('class','mc')
+    .attr('y',d=>pcy(d._i)).attr('height',d=>acy(d._i)-pcy(d._i)).attr('fill','var(--slip)').attr('opacity',0.16);
+  const mileActual = mileG.selectAll('path.ma').data(miles).join('path').attr('class','ma')
+    .attr('fill','var(--milestone)').attr('filter','url(#glow)');
+  const mileLbls = mileG.selectAll('text.late-mile').data(lateMiles).join('text').attr('class','vlate late-mile')
+    .attr('y',d=>acy(d._i)+3).text(d=>'+'+dayDiff(d._s,d._pd)+'d');
+
+  // ---- redraw: update every x-dependent attribute from the current zx ----
+  function redraw(){
+    axisG.call(axis.scale(zx));
+    axisG.selectAll('.tick line').attr('y2', bodyH + 4).attr('stroke','var(--grid)');  // tick guides down the body
+    const tx = px(TODAY);
+    todayLine.attr('x1',tx).attr('x2',tx);
+    todayLbl.attr('x',tx+4);
+    slipShade.attr('x',d=>px(d._pe)).attr('width',d=>Math.max(px(d._e)-px(d._pe),0));
+    depPaths.attr('d',d=>elbow(px(aEnd(d.a)), acy(d.a._i), px(d.b._s), acy(d.b._i)));
+    baseRects.attr('x',d=>px(d._ps)).attr('width',d=>Math.max(px(d._pe)-px(d._ps),1));
+    barRects.attr('x',d=>px(d._s)).attr('width',d=>Math.max(px(d._e)-px(d._s),1));
+    progRects.attr('x',d=>px(d._s)).attr('width',d=>Math.max((px(d._e)-px(d._s))*d.p,0));
+    slipBars.attr('x',d=>px(d._pe)).attr('width',d=>Math.max(px(d._e)-px(d._pe),0));
+    delayLbls.attr('x',d=>px(d._e)+5);
+    milePlanned.attr('d',d=>dia(px(d._pd),pcy(d._i),6));
+    mileConn.attr('x',d=>Math.min(px(d._pd),px(d._s))).attr('width',d=>Math.abs(px(d._s)-px(d._pd)));
+    mileActual.attr('d',d=>dia(px(d._s),acy(d._i),6));
+    mileLbls.attr('x',d=>px(d._s)+9);
+  }
+
+  // ---- zoom (X only). rescaleX keeps bar thickness/text constant. ----
+  const zoom = d3.zoom()
+    .scaleExtent([1, 14])
+    .translateExtent([[labelW, HEAD], [labelW + vpW, HEAD + bodyH]])
+    .extent([[labelW, HEAD], [labelW + vpW, HEAD + bodyH]])
+    .on('zoom', ev => { zx = ev.transform.rescaleX(x0); redraw(); });
+
+  // transparent capture rect on top of the chart area
+  const capture = svg.append('rect').attr('class','zoom-capture')
+    .attr('x',labelW).attr('y',HEAD).attr('width',vpW).attr('height',bodyH)
+    .attr('fill','transparent').style('pointer-events','all');
+  capture.call(zoom);
+
+  redraw();
+
+  // ---- responsive: re-fit on resize ----
+  let rt;
+  window.addEventListener('resize', () => {
+    clearTimeout(rt);
+    rt = setTimeout(() => {
+      vpW = viewportW(); svgW = labelW + vpW + RPAD;
+      svg.attr('width', svgW);
+      x0.range([labelW, labelW + vpW]);
+      clipRect.attr('width', vpW);
+      panel.attr('width', vpW);
+      capture.attr('width', vpW);
+      sepLines.attr('x2', labelW + vpW);
+      zoom.translateExtent([[labelW, HEAD], [labelW + vpW, HEAD + bodyH]]).extent([[labelW, HEAD], [labelW + vpW, HEAD + bodyH]]);
+      capture.call(zoom.transform, d3.zoomIdentity);  // reset transform → fires redraw
+    }, 120);
+  });
+})();
+</script>
 </body>
 </html>
