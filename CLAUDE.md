@@ -20,6 +20,12 @@ The entire app is one self-contained file:
 There is no build step, no package manager, no framework. **Open `index.html` in a
 browser** (needs internet for the D3 CDN). The render script is wrapped in an IIFE.
 
+## Deploy
+
+`.github/workflows/deploy.yml` publishes `index.html` to **GitHub Pages** on every
+push to `master` (static upload, no build — copies `index.html` into `_site/` and
+deploys via `actions/deploy-pages`). Live at https://yuutamon.github.io/vanilla-gantt/.
+
 ## What it draws
 
 - Two tracks per task: **planned (ghost outline, top)** and **actual (solid, bottom)**;
